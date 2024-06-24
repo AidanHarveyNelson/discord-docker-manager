@@ -19,4 +19,5 @@ ENV DISCORD_TOKEN="replace_me"
 
 COPY --from=build /docker-manager /docker-manager
 
+SHELL ["/bin/sh", "-c"]
 CMD "/docker-manager" "-token" $DISCORD_TOKEN "-guid" $GUILD_ID "-filter" $DOCKER_FILTER
