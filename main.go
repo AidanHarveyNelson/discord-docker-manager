@@ -2,10 +2,10 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -33,6 +33,8 @@ func init() {
 	}
 }
 
+// Helper function to add Command Application Option per server
+// Will then also add all child actions to the server
 func addServerCommand(server_name string, command *discordgo.ApplicationCommand) {
 
 	options := discordgo.ApplicationCommandOption{
@@ -130,23 +132,28 @@ func main() {
 
 	contList, err := docker.SearchContainers(20, *DockerFilter)
 	if err != nil {
-		fmt.Printf("Unable to retrieve container information. Stopping bot")
 		s.Close()
-		os.Exit(1)
+		log.Fatalf("Unable to retrieve container information. Stopping bot")
 	}
 
 	// Get Game Server Command and add Docker Containers
 	serverInfo = make(map[string]string, len(contList))
-	for i, v := range contList {
-		fmt.Printf("Current loop is: %d\n", i)
-		fmt.Printf("Container ID is: %v\n", v.ID)
-		fmt.Printf("Container Name is: %v\n", v.Names)
-		curName := v.Names[0][1:]
-		// Should probably be a map
+	for _, v := range contList {
+		curName := strings.Replace(v.Names[0], "/", "", -1)
+		// Store server name and ID in a map for reference
 		serverInfo[curName] = v.ID
 		addServerCommand(curName, commands[0])
 	}
 
+	// Get keys from serverInfo so we can log what servers the bot will manage
+	var servKeys []string
+	for k := range serverInfo {
+		servKeys = append(servKeys, k)
+	}
+	log.Printf("Servers to provide commands for are: %v", servKeys)
+
+	// Keep a log of registered commands so we can clean up after the bot shut downs
+	// This ensures that commands will always stay up to date
 	log.Println("Adding commands...")
 	registeredCommands := make([]*discordgo.ApplicationCommand, len(commands))
 	for i, v := range commands {
@@ -158,7 +165,6 @@ func main() {
 	}
 
 	defer s.Close()
-
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
 	log.Println("Press Ctrl+C to exit")

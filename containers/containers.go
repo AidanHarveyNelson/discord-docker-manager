@@ -2,8 +2,8 @@ package containers
 
 import (
 	"context"
-	"fmt"
 	"log"
+	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -31,12 +31,20 @@ func NewDocker() *Docker {
 func (d *Docker) SearchContainers(limit int, filter string) ([]types.Container, error) {
 
 	filterMap := filters.NewArgs()
-	// To-Do unpack these values properly so that multiple filters can be supported
-	filterMap.Add("label", filter)
+	argStr := strings.Split(filter, ",")
+	for _, v := range argStr {
+		bef, aft, found := strings.Cut(v, "=")
+		if !found {
+			log.Printf("Unable to find = in string %v. Thus skipping it\n", v)
+			continue
+		}
+		filterMap.Add(bef, aft)
+	}
+	log.Printf("Final Filter Arguments to use are: %v\n", filterMap)
 	containerOptions := container.ListOptions{Limit: limit, Filters: filterMap}
 	containerList, err := d.cli.ContainerList(d.ctx, containerOptions)
 	if err != nil {
-		log.Printf("Unable to find container with these conditions. %v", err)
+		log.Printf("Unable to find container with these conditions due to: %v", err)
 	}
 
 	return containerList, err
@@ -46,7 +54,7 @@ func (d *Docker) StartContainer(container_id string) error {
 
 	err := d.cli.ContainerStart(d.ctx, container_id, container.StartOptions{})
 	if err != nil {
-		fmt.Printf("Unable to start container %v", container_id)
+		log.Printf("Unable to start container %v", container_id)
 	}
 	return err
 }
@@ -55,7 +63,7 @@ func (d *Docker) StopContainer(container_id string) error {
 
 	err := d.cli.ContainerStop(d.ctx, container_id, container.StopOptions{})
 	if err != nil {
-		fmt.Printf("Unable to start container %v", container_id)
+		log.Printf("Unable to start container %v", container_id)
 	}
 	return err
 }
@@ -68,11 +76,11 @@ func (d *Docker) StatusContainer(container_id string) string {
 	options := container.ListOptions{Limit: 1, Filters: filterMap}
 	contList, err := d.cli.ContainerList(d.ctx, options)
 	if err != nil {
-		fmt.Printf("Unable to start container %v", container_id)
+		log.Printf("Unable to start container %v", container_id)
 		conStatus = "Error occured"
 	}
 	if len(contList) == 0 {
-		fmt.Printf("Unable to find container with id: %v", container_id)
+		log.Printf("Unable to find container with id: %v", container_id)
 		conStatus = "Error occured"
 	}
 	conStatus = contList[0].Status
@@ -83,11 +91,11 @@ func (d *Docker) RestartContainer(container_id string) error {
 
 	err := d.StopContainer(container_id)
 	if err != nil {
-		fmt.Printf("Unable to start container %v", container_id)
+		log.Printf("Unable to start container %v", container_id)
 	}
 	err = d.StartContainer(container_id)
 	if err != nil {
-		fmt.Printf("Unable to start container %v", container_id)
+		log.Printf("Unable to start container %v", container_id)
 	}
 	return err
 }
