@@ -2,11 +2,12 @@ module github.com/AidanHarveyNelson/discord_docker_manager
 
 go 1.22.3
 
+require github.com/docker/docker v27.0.0+incompatible
+
 require (
 	github.com/Microsoft/go-winio v0.4.14 // indirect
 	github.com/bwmarrin/discordgo v0.28.1 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/docker/docker v27.0.0+incompatible // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect

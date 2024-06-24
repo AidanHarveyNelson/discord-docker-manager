@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -29,11 +28,11 @@ func NewDocker() *Docker {
 	}
 }
 
-func (d *Docker) SearchContainers(limit int) ([]types.Container, error) {
+func (d *Docker) SearchContainers(limit int, filter string) ([]types.Container, error) {
 
 	filterMap := filters.NewArgs()
 	// To-Do unpack these values properly so that multiple filters can be supported
-	filterMap.Add("label", os.Getenv("DOCKER_FILTER"))
+	filterMap.Add("label", filter)
 	containerOptions := container.ListOptions{Limit: limit, Filters: filterMap}
 	containerList, err := d.cli.ContainerList(d.ctx, containerOptions)
 	if err != nil {
