@@ -1,0 +1,12 @@
+version: '3'
+
+services:
+  docker-manager:
+    container_name: docker-manager
+    image: firzen23/discord_docker_manager:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock #required
+    environment:
+      - DISCORD_TOKEN=<your_discord_token> #required
+      - GUILD_ID=<your_server_id> #optional
+      - DOCKER_FILTER=<your_docker_filter> #required

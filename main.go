@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -13,17 +14,20 @@ import (
 
 // Bot parameters
 var (
-	GuildID        = os.Getenv("GUILD_ID")
-	BotToken       = os.Getenv("BOT_TOKEN")
-	RemoveCommands = true
+	GuildID        = flag.String("guid", "", "Guild to run the bot against")
+	BotToken       = flag.String("token", "", "Bot access token")
+	DockerFilter   = flag.String("filter", "", "Filter for selecting correct docker containers")
+	RemoveCommands = flag.Bool("rmcmd", true, "Remove all commands after shutdowning or not")
 )
 
 var s *discordgo.Session
 var docker = containers.NewDocker()
 
+func init() { flag.Parse() }
+
 func init() {
 	var err error
-	s, err = discordgo.New("Bot " + BotToken)
+	s, err = discordgo.New("Bot " + *BotToken)
 	if err != nil {
 		log.Fatalf("Invalid bot parameters: %v", err)
 	}
@@ -124,7 +128,7 @@ func main() {
 		log.Fatalf("Cannot open the session: %v", err)
 	}
 
-	contList, err := docker.SearchContainers(20)
+	contList, err := docker.SearchContainers(20, *DockerFilter)
 	if err != nil {
 		fmt.Printf("Unable to retrieve container information. Stopping bot")
 		s.Close()
@@ -146,7 +150,7 @@ func main() {
 	log.Println("Adding commands...")
 	registeredCommands := make([]*discordgo.ApplicationCommand, len(commands))
 	for i, v := range commands {
-		cmd, err := s.ApplicationCommandCreate(s.State.User.ID, GuildID, v)
+		cmd, err := s.ApplicationCommandCreate(s.State.User.ID, *GuildID, v)
 		if err != nil {
 			log.Panicf("Cannot create '%v' command: %v", v.Name, err)
 		}
@@ -161,10 +165,10 @@ func main() {
 	<-stop
 
 	// Clean up commands on Server if Required
-	if RemoveCommands {
+	if *RemoveCommands {
 		log.Println("Removing commands...")
 		for _, v := range registeredCommands {
-			err := s.ApplicationCommandDelete(s.State.User.ID, GuildID, v.ID)
+			err := s.ApplicationCommandDelete(s.State.User.ID, *GuildID, v.ID)
 			if err != nil {
 				log.Panicf("Cannot delete '%v' command: %v", v.Name, err)
 			}
