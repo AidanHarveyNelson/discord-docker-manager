@@ -1,4 +1,4 @@
-package containers
+package main
 
 import (
 	"context"
@@ -12,35 +12,49 @@ import (
 )
 
 type Docker struct {
-	cli *client.Client
-	ctx context.Context
+	cli     *client.Client
+	ctx     context.Context
+	filters filters.Args
 }
 
-func NewDocker() *Docker {
+func NewDocker(contFilter string) *Docker {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		panic(err)
 	}
 
+	filterMap := filters.NewArgs()
 	return &Docker{
-		cli: cli,
-		ctx: context.Background(),
+		cli:     cli,
+		ctx:     context.Background(),
+		filters: extractFilters(contFilter, filterMap),
 	}
 }
 
-func (d *Docker) SearchContainers(limit int, filter string) ([]types.Container, error) {
+func extractFilters(filter string, filterMap filters.Args) filters.Args {
 
-	filterMap := filters.NewArgs()
-	argStr := strings.Split(filter, ",")
-	for _, v := range argStr {
-		bef, aft, found := strings.Cut(v, "=")
-		if !found {
-			log.Printf("Unable to find = in string %v. Thus skipping it\n", v)
-			continue
+	if filter != "" {
+		argStr := strings.Split(filter, ",")
+		for _, v := range argStr {
+			bef, aft, found := strings.Cut(v, "=")
+			if !found {
+				log.Printf("Unable to find = in string %v. Thus skipping it\n", v)
+				continue
+			}
+			filterMap.Add(bef, aft)
 		}
-		filterMap.Add(bef, aft)
 	}
 	log.Printf("Final Filter Arguments to use are: %v\n", filterMap)
+	return filterMap
+}
+
+func (d *Docker) SearchContainers(limit int, contFilter string) ([]types.Container, error) {
+
+	filterMap := d.filters.Clone()
+	if contFilter != "" {
+		filterMap = extractFilters(contFilter, filterMap)
+	}
+
 	containerOptions := container.ListOptions{Limit: limit, Filters: filterMap}
 	containerList, err := d.cli.ContainerList(d.ctx, containerOptions)
 	if err != nil {
@@ -98,4 +112,8 @@ func (d *Docker) RestartContainer(container_id string) error {
 		log.Printf("Unable to start container %v", container_id)
 	}
 	return err
+}
+
+func (d *Docker) Close() {
+	d.cli.Close()
 }
