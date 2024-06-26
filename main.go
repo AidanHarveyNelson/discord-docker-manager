@@ -107,17 +107,13 @@ var (
 
 				switch options[0].Name {
 				case "start":
-					docker.StartContainer(subCommand[0].Value.(string))
-					content = "Server: has been succesfully started"
+					content = "Request to start server has been recieved"
 				case "stop":
-					docker.StopContainer(subCommand[0].Value.(string))
-					content = "Server has been succesfully stopped"
+					content = "Request to stop server has been recieved"
 				case "status":
-					status := docker.StatusContainer(subCommand[0].Value.(string))
-					content = "Server is currently in status \"" + status + "\""
+					content = "Request to get server status has been recieved"
 				case "restart":
-					docker.RestartContainer(subCommand[0].Value.(string))
-					content = "Server has been succesfully restarted"
+					content = "Request to restart server has been recieved"
 				}
 				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -125,6 +121,29 @@ var (
 						Content: content,
 					},
 				})
+				switch options[0].Name {
+				case "start":
+					docker.StartContainer(subCommand[0].Value.(string))
+					content = "Server has been succesfully started"
+				case "stop":
+					go docker.StopContainer(subCommand[0].Value.(string))
+					content = "Server has been succesfully stopped"
+				case "status":
+					status := docker.StatusContainer(subCommand[0].Value.(string))
+					content = "Server is currently in status \"" + status + "\""
+				case "restart":
+					go docker.RestartContainer(subCommand[0].Value.(string))
+					content = "Server has been succesfully restarted"
+				}
+				_, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+					Content: &content,
+				})
+				if err != nil {
+					s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+						Content: "Something went wrong",
+					})
+					return
+				}
 
 			case discordgo.InteractionApplicationCommandAutocomplete:
 				data := i.ApplicationCommandData()
