@@ -5,23 +5,22 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 
 	"github.com/bwmarrin/discordgo"
-
-	containers "github.com/AidanHarveyNelson/discord_docker_manager/containers"
 )
 
 // Bot parameters
 var (
-	GuildID        = flag.String("guid", "", "Guild to run the bot against")
-	BotToken       = flag.String("token", "", "Bot access token")
-	DockerFilter   = flag.String("filter", "", "Filter for selecting correct docker containers")
-	RemoveCommands = flag.Bool("rmcmd", true, "Remove all commands after shutdowning or not")
+	GuildID           = flag.String("guid", "", "Guild to run the bot against")
+	BotToken          = flag.String("token", "", "Bot access token")
+	DockerFilter      = flag.String("filter", "", "Filter for selecting correct docker containers")
+	RemoveCommands    = flag.Bool("rmcmd", true, "Remove all commands after shutdowning or not")
+	StopNoPlayer      = flag.Bool("auto-stop", false, "Automatically stops all containers with no players")
+	StopNoPlayerHours = flag.Int("auto-stop-hours", 0, "How many hours the server has to have no players before stopping")
 )
 
 var s *discordgo.Session
-var docker = containers.NewDocker()
+var docker *Docker
 
 func init() { flag.Parse() }
 
@@ -31,86 +30,129 @@ func init() {
 	if err != nil {
 		log.Fatalf("Invalid bot parameters: %v", err)
 	}
+	docker = NewDocker(*DockerFilter)
 }
 
 // Helper function to add Command Application Option per server
 // Will then also add all child actions to the server
-func addServerCommand(server_name string, command *discordgo.ApplicationCommand) {
+func getServerChoices(filter string) []*discordgo.ApplicationCommandOptionChoice {
 
-	options := discordgo.ApplicationCommandOption{
-		Name:        server_name,
-		Description: "Group of commands to control server: " + server_name,
-		Options:     serverActions,
-		Type:        discordgo.ApplicationCommandOptionSubCommandGroup,
+	choices := []*discordgo.ApplicationCommandOptionChoice{}
+	servList, err := docker.SearchContainers(20, filter)
+	if err != nil {
+		log.Println("Unable to find any containers")
+		return choices
 	}
 
-	command.Options = append(command.Options, &options)
+	for _, server := range servList {
+		choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+			Name:  server.Names[0][1:],
+			Value: server.ID,
+		})
+	}
+	log.Printf("Constructed the following automcomplete options %v", choices)
+	return choices
 }
 
 var (
-	serverActions = []*discordgo.ApplicationCommandOption{
+	serverNameOption = []*discordgo.ApplicationCommandOption{
 		{
-			Name:        "start",
-			Description: "Start command for the server",
-			Type:        discordgo.ApplicationCommandOptionSubCommand,
-		},
-		{
-			Name:        "stop",
-			Description: "Stop command for the server",
-			Type:        discordgo.ApplicationCommandOptionSubCommand,
-		},
-		{
-			Name:        "restart",
-			Description: "Restart command for the server",
-			Type:        discordgo.ApplicationCommandOptionSubCommand,
-		},
-		{
-			Name:        "status",
-			Description: "Status command for the server",
-			Type:        discordgo.ApplicationCommandOptionSubCommand,
+			Name:         "server-name",
+			Description:  "Please specify which server you would like to interact with",
+			Type:         discordgo.ApplicationCommandOptionString,
+			Required:     true,
+			Autocomplete: true,
 		},
 	}
-
 	commands = []*discordgo.ApplicationCommand{
 		{
 			Name:        "game-server",
 			Description: "Group of commands that revole around managing serveers",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Name:        "start",
+					Description: "Start command for the server",
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Options:     serverNameOption,
+				},
+				{
+					Name:        "stop",
+					Description: "Stop command for the server",
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Options:     serverNameOption,
+				},
+				{
+					Name:        "restart",
+					Description: "Restart command for the server",
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Options:     serverNameOption,
+				},
+				{
+					Name:        "status",
+					Description: "Status command for the server",
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Options:     serverNameOption,
+				},
+			},
 		},
 	}
 
 	commandHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
 		"game-server": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-			options := i.ApplicationCommandData().Options
-			content := ""
+			switch i.Type {
+			case discordgo.InteractionApplicationCommand:
+				options := i.ApplicationCommandData().Options
+				content := ""
+				subCommand := options[0].Options
 
-			serverName := options[0].Name
-			childAction := options[0].Options
-			serverID := serverInfo[serverName]
-			switch childAction[0].Name {
-			case "start":
-				docker.StartContainer(serverID)
-				content = "Server: " + serverName + " has been succesfully started"
-			case "stop":
-				docker.StopContainer(serverID)
-				content = "Server: " + serverName + " has been succesfully stopped"
-			case "status":
-				status := docker.StatusContainer(serverID)
-				content = "Server: " + serverName + " is currently in status \"" + status + "\""
-			case "restart":
-				docker.RestartContainer(serverID)
-				content = "Server: " + serverName + " has been succesfully restarted"
+				switch options[0].Name {
+				case "start":
+					docker.StartContainer(subCommand[0].Value.(string))
+					content = "Server: has been succesfully started"
+				case "stop":
+					docker.StopContainer(subCommand[0].Value.(string))
+					content = "Server has been succesfully stopped"
+				case "status":
+					status := docker.StatusContainer(subCommand[0].Value.(string))
+					content = "Server is currently in status \"" + status + "\""
+				case "restart":
+					docker.RestartContainer(subCommand[0].Value.(string))
+					content = "Server has been succesfully restarted"
+				}
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: content,
+					},
+				})
+
+			case discordgo.InteractionApplicationCommandAutocomplete:
+				data := i.ApplicationCommandData()
+				var choices []*discordgo.ApplicationCommandOptionChoice
+				// Set different server choices based on command
+				switch data.Options[0].Name {
+				case "start":
+					choices = getServerChoices("status=exited,status=paused")
+				case "stop":
+					choices = getServerChoices("status=running")
+				case "status":
+					choices = getServerChoices("")
+				case "restart":
+					choices = getServerChoices("status=running")
+				}
+				err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+					Data: &discordgo.InteractionResponseData{
+						Choices: choices,
+					},
+				})
+				if err != nil {
+					panic(err)
+				}
 			}
-
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: content,
-				},
-			})
 		},
 	}
-
-	serverInfo map[string]string
+	// serverInfo map[string]string
 )
 
 func init() {
@@ -130,28 +172,6 @@ func main() {
 		log.Fatalf("Cannot open the session: %v", err)
 	}
 
-	contList, err := docker.SearchContainers(20, *DockerFilter)
-	if err != nil {
-		s.Close()
-		log.Fatalf("Unable to retrieve container information. Stopping bot")
-	}
-
-	// Get Game Server Command and add Docker Containers
-	serverInfo = make(map[string]string, len(contList))
-	for _, v := range contList {
-		curName := strings.Replace(v.Names[0], "/", "", -1)
-		// Store server name and ID in a map for reference
-		serverInfo[curName] = v.ID
-		addServerCommand(curName, commands[0])
-	}
-
-	// Get keys from serverInfo so we can log what servers the bot will manage
-	var servKeys []string
-	for k := range serverInfo {
-		servKeys = append(servKeys, k)
-	}
-	log.Printf("Servers to provide commands for are: %v", servKeys)
-
 	// Keep a log of registered commands so we can clean up after the bot shut downs
 	// This ensures that commands will always stay up to date
 	log.Println("Adding commands...")
@@ -164,7 +184,11 @@ func main() {
 		registeredCommands[i] = cmd
 	}
 
+	// Defer closure of connections
 	defer s.Close()
+	defer docker.Close()
+
+	// Listen for OS Interrupt to run clean up
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
 	log.Println("Press Ctrl+C to exit")

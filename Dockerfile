@@ -5,7 +5,6 @@ FROM golang:1.22.3 AS build
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
-COPY containers/ ./containers
 COPY *.go ./
 RUN CGO_ENABLED=0 GOOS=linux go build -o /docker-manager
 
